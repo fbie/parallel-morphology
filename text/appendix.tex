@@ -1,0 +1,195 @@
+\chapter{Auxiliary Algorithms}
+\label{chpt:auxiliary-algorithms}
+
+\section{Bounded Array Queue}
+\label{sec:bounded-array-queue}
+
+The implementation of the bounded array queue, which I use for maintaining work
+items like pixels or image lines, is lock-free. It maintains two instances of
+\inlinecode{AtomicInteger}, that point to the \inlinecode{head} and the
+\inlinecode{tail} of the queue (i.e. indices on the pixel array). The array is
+always of size $2^n$. This makes it possible to use the bit-wise \emph{and}
+operator to compute modulo of the \inlinecode{head} and \inlinecode{tail}
+pointers, in order to wrap-around the pointers to point to the beginning of the
+underlying array again. The queue is empty, if \inlinecode{head} =
+\inlinecode{tail}. When an element is enqueued, \inlinecode{tail} is advanced,
+pointing to the next empty array index. When fetching an element from the queue,
+\inlinecode{head} is advanced again. Each of these operations has a complexity
+of constant time. The implementation of these functions is shown in detail in
+figure~\ref{fig:bounded-array-queue}. For brevity, the constructor and other,
+rather uninteresting, details are omitted.
+
+\begin{figure}
+  \centering
+  \lstinputlisting[linerange={queue0-queue1,queue2-queue3,queue4-queue5,queue6-queue7,queue8-queue9}]{../parallel-morphology/src/dk/itu/parallel/morphology/util/queues/ConcurrentArrayQueue.java}
+  \caption{The implementation of the bounded array queue.}
+  \label{fig:bounded-array-queue}
+\end{figure}
+
+\section{Shared Queues}
+\label{sec:area-opening-queues} % kept like this to not break references
+
+\begin{figure}
+  \centering
+
+  \lstinputlisting[linerange={queues0-queues1,queues2-queues3,queues4-queues5}]{../parallel-morphology/src/dk/itu/parallel/morphology/util/queues/Queues.java}
+
+  \caption{The \inlinecode{Queues} container class.}
+  \label{fig:ao-wf-queues}
+\end{figure}
+
+The \inlinecode{Queues} data structure maintains two concurrent queues,
+\inlinecode{upper} and \inlinecode{lower}, and a level pointer which indicates
+the currently filtered gray-scale level. On initialization, all items are
+enqueued to \inlinecode{upper}. Calling \inlinecode{pop}, the upper queue is
+successively emptied by consuming threads. After the threads are done with their
+work on the retrieved item, they put it into the lower queue through
+\inlinecode{enqueue}.
+
+Atomically swapping and gray-level decrease is implemented in the auxiliary
+function \inlinecode{swapAndDecrement}. Each thread acquires a local reference
+of the thread global \inlinecode{Queues} instance. It can then issue a call to
+update the global queue, using its local reference to check if it is up to date:
+
+\lstinputlisting[style=inline, linerange={swap0-swap1}]{../parallel-morphology/src/dk/itu/parallel/morphology/util/queues/Queues.java}
+
+Obviously, the swap will fail if the calling thread does not have the most
+recent information on the global queues stored locally, so that we can make sure
+that it will be swapped only once per level.
+
+\section{Pixel Line Representation}
+\label{sec:pixel-line}
+
+\begin{figure}
+  \centering
+  \lstinputlisting[linerange={line0-line1}]{../parallel-morphology/src/dk/itu/parallel/morphology/filter/QueueLines.java}
+
+  \caption{The \inlinecode{Line} container class implementation.}
+  \label{fig:line-class}
+\end{figure}
+
+In order to represent a single pixel line, we rely on a container class
+\inlinecode{Line}, that wraps an array, which in turn contains, by gray-scale
+value sorted, pixel indices. For convenience, the container class also
+internally maintains a pointer to the pixel, which will be returned on the next
+call to \inlinecode{current}. Furthermore, the function \inlinecode{advance}
+moves the pointer and returns true, if the internal pointer is not yet outside
+of the array bounds. The same check can be performed by calling
+\inlinecode{workLeft}. The entire implementation is depicted in
+figure~\ref{fig:line-class}.
+
+\chapter{Raw Data Plots}
+\label{chpt:omitted-data}
+
+\begin{figure}[h]
+  \centering
+  \fullrawrow{\synthone}{ms}{raw-hypothesis-1a}
+  \caption{Execution time in miliseconds for \emph{grad-vert}.}
+  \fullrawrow{\synthone}{retries}{raw-hypothesis-1a}
+  \caption{Number of retries for \emph{grad-vert}.}
+\end{figure}
+
+\begin{figure}
+  \centering
+  \fullrawrow{\synthone}{cache-misses}{raw-hypothesis-1a}
+  \caption{Number of cache-misses for \emph{grad-vert}.}
+  \fullrawrow{\synthone}{instructions}{raw-hypothesis-1a}
+  \caption{Number of issued CPU instructions for \emph{grad-vert}.}
+  \fullrawrow{\synthtwo}{ms}{raw-hypothesis-1b}
+  \caption{Execution time in milliseconds for \emph{grad-hrz}.}
+\end{figure}
+
+\begin{figure}
+  \centering
+  \fullrawrow{\synthtwo}{retries}{raw-hypothesis-1b}
+  \caption{Number of retries for \emph{grad-hrz}.}
+  \fullrawrow{\synthtwo}{cache-misses}{raw-hypothesis-1b}
+  \caption{Number of cache-misses for \emph{grad-hrz}.}
+  \fullrawrow{\synthtwo}{instructions}{raw-hypothesis-1b}
+  \caption{Number of issued CPU instructions for \emph{grad-hrz}.}
+\end{figure}
+
+\begin{figure}
+  \centering
+  \fullrawrow{\synththreea}{ms}{raw-hypothesis-2a}
+  \caption{Execution time in miliseconds for \emph{noise-fine}.}
+  \fullrawrow{\synththreea}{retries}{raw-hypothesis-2a}
+  \caption{Number of retries for \emph{noise-fine}.}
+  \fullrawrow{\synththreea}{cache-misses}{raw-hypothesis-2a}
+  \caption{Number of cache-misses for \emph{noise-fine}.}
+\end{figure}
+
+\begin{figure}
+  \centering
+  \fullrawrow{\synththreea}{instructions}{raw-hypothesis-2a}
+  \caption{Number of issued CPU instructions for \emph{noise-fine}.}
+  \fullrawrow{\synthfour}{ms}{raw-hypothesis-2b}
+  \caption{Execution time in miliseconds for \emph{noise-coarse}.}
+  \fullrawrow{\synthfour}{retries}{raw-hypothesis-2b}
+  \caption{Number of retries for \emph{noise-coarse}.}
+\end{figure}
+
+\begin{figure}
+  \centering
+  \fullrawrow{\synthfour}{cache-misses}{raw-hypothesis-2b}
+  \caption{Number of cache misses for \emph{noise-coarse}.}
+  \fullrawrow{\synthfour}{instructions}{raw-hypothesis-2b}
+  \caption{Number of issued CPU instructions for \emph{noise-coarse}.}
+  \fullrawrow{\synthfive}{ms}{raw-hypothesis-3}
+  \caption{Execution time in miliseconds for \emph{flat}.}
+\end{figure}
+
+\begin{figure}
+  \centering
+  \fullrawrow{\synthfive}{retries}{raw-hypothesis-3}
+  \caption{Number of retries for \emph{flat}.}
+  \fullrawrow{\synthfive}{cache-misses}{raw-hypothesis-3}
+  \caption{Number of cache misses for \emph{flat}.}
+  \fullrawrow{\synthfive}{instructions}{raw-hypothesis-3}
+  \caption{Number of issued CPU instructions for \emph{flat}.}
+\end{figure}
+
+\begin{figure}
+  \centering
+  \fullrawrow{\natone}{ms}{raw-nat-1}
+  \caption{Execution time in miliseconds for \emph{rbc}.}
+  \fullrawrow{\natone}{retries}{raw-nat-1}
+  \caption{Number of retries for \emph{rbc}.}
+  \fullrawrow{\natone}{cache-misses}{raw-nat-1}
+  \caption{Number of cache misses for \emph{rbc}.}
+\end{figure}
+
+\begin{figure}
+  \centering
+  \fullrawrow{\natone}{instructions}{raw-nat-1}
+  \caption{Number of issued CPU instructions for \emph{rbc}.}
+  \fullrawrownat{\nattwo}{ms}{raw-nat-2}
+  \caption{Execution time in miliseconds for \emph{facade}.}
+  \fullrawrownat{\nattwo}{retries}{raw-nat-2}
+  \caption{Number of retries for \emph{facade}.}
+\end{figure}
+
+\begin{figure}
+  \centering
+  \fullrawrownat{\nattwo}{cache-misses}{raw-nat-2}
+  \caption{Number of cache misses for \emph{facade}.}
+  \fullrawrownat{\nattwo}{instructions}{raw-nat-2}
+  \caption{Number of issued CPU instructions for \emph{facade}.}
+  \fullrawrownat{\natthree}{ms}{raw-nat-3}
+  \caption{Execution time in miliseconds for \emph{mammo}.}
+\end{figure}
+
+\begin{figure}
+  \centering
+  \fullrawrownat{\natthree}{retries}{raw-nat-3}
+  \caption{Number of retries for \emph{mammo}.}
+  \fullrawrownat{\natthree}{cache-misses}{raw-nat-3}
+  \caption{Number of cache misses for \emph{mammo}.}
+  \fullrawrownat{\natthree}{instructions}{raw-nat-3}
+  \caption{Number of issued CPU instructions for \emph{mammo}.}
+\end{figure}
+
+%%% Local Variables:
+%%% mode: latex
+%%% TeX-master: "main"
+%%% End:

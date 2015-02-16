@@ -1,0 +1,301 @@
+\chapter{Parallel Area Opening}
+\label{chpt:area-opening}
+
+In this section, I will describe five algorithms that compute the area opening
+for a given input image and a minimum area $\lambda$, in parallel. All
+algorithms are implemented, so that they can use either variant of shared
+union-find as presented in chapter \ref{chpt:union-find}.
+
+The designs of the parallel area opening algorithms vary to different
+degrees. The first important notion is that of work items. For images, those are
+typically either pixels, pixel-lines or multi-line sub-images. Furthermore,
+there are essentially three types of filtering algorithms:
+
+\begin{description}
+\item[No sorting] Instead of sorting, the pixel array is scanned repeatedly.
+
+\item[Thread-local sorting] Subsets of the pixel array are sorted
+  thread-locally.
+
+\item[Shared sorting] Pixels are sorted in a lock-free fashion and sorting is a
+  joint effort of all threads.
+
+\end{description}
+
+There is one important property, that may not be violated by any algorithm:
+pixels must be scanned in decreasing gray-scale order, in order to guarantee,
+that regional maxima are found implicitly \cite{Meijster2002Comparison}. We will
+get back to the importance of this property in chapter \ref{chpt:correctness}.
+
+In the following sections, we will see implementation details for each of these
+algorithms. The algorithms can handle any number of gray-scale values. The
+resolving step, that updates the gray-scale values of each pixel, according to
+its position in the tree, is omitted entirely: this is a linear time operation
+\cite{Meijster2002Comparison} and can easily be parallelized.
+
+For the remainder of this chapter, let $k$ denote the number of possible
+gray-values per pixel, and $n$ the number of pixels in a gray-scale image
+$I$. Moreover, let $x_I$ and $y_I$ denote the dimensions of an image $I$ in $x$-
+and $y$-direction, so that $x_I y_I = n$. To simplify the analysis of the
+algorithms, let us assume that \inlinecode{uniteNeighbors} amortizes to $O(n)$
+for an image $I$ of size $n$. We will only use formal run-time complexity to
+underline, how differently the parallel algorithms behave, even though they
+share the same formal complexity.
+
+\section{Non-Sorting Variants}
+\label{sec:area-opening-no-sorting}
+
+A key idea of the algorithm presented by \citet{Meijster2002Comparison}, is to
+sort pixels in linear time by gray-value. Originally, Vincent proposed an
+algorithm, that scans the image repeatedly \cite{Vincent1994Morphological}. In
+this section, we will take a look at algorithms that neglect the possibility of
+linear-time sorting of pixels and instead re-scan the image, until all pixels
+have been filtered. The main purpose is didactic: without sorting, the
+algorithms are easier to implement and we can focus on key ideas. In
+section~\ref{sec:area-opening-local-sorting}, we will see algorithms that extend
+the ones presented here, by sorting the input. Nevertheless, algorithms from
+this section will be included in the performance evaluation in
+chapter~\ref{chpt:experiments}.
+
+\subsection{Sub-Image Filtering}
+\label{sec:area-opening-no-sorting-sub-image}
+\begin{figure}
+  \centering
+
+  \lstinputlisting[widthgobble=2*1, linerange={filter0-filter1}]{../parallel-morphology/src/dk/itu/parallel/morphology/filter/Split.java}
+
+  \caption[Simple sub-image filtering algorithm.]{Simple sub-image filtering
+    algorithm. The interval of pixels assigned to a thread is denoted as the
+    integers \inlinecode{lower} and \inlinecode{upper}. Threads synchronize on
+    gray-level decrease.}
+  \label{fig:area-opening-no-sorting-sub-image}
+\end{figure}
+
+A typical pattern to parallelize image analysis algorithms, is to simply split
+up the image in as many sub-images as there are hardware threads available. This
+requires, that the operation on each pixel is independent. This approach works
+well for image convolutions, such as the Sobel filter
+\cite{Szeliski2011Computer}.
+
+According to these requirements, conditional region-growing, as performed during
+area opening, is not parallelizable by splitting the image: correct growing must
+be ensured across sub-image borders. Using a shared and re-entrant data
+structure, however, like our concurrent union-find variants, circumvents this
+requirement of independence. While each operation can be performed
+independently, the result of each union operation is shared across threads
+implicitly through side-effects.
+
+Following this, we can implement a simple area opening algorithm on
+sub-images. Each hardware thread is assigned an upper and a lower index on the
+pixel array of the image and, for each gray-scale level, iterates repeatedly
+over all indices, from the lower to the exclusive upper bound, uniting all valid
+pixels for the current gray-scale level. All threads are synchronized on the
+current gray-level, which is maintained locally by each thread. Synchronization
+is performed through a barrier: on reaching the barrier, a thread may not
+proceed, until all other threads also reach it.
+
+If executed on only a single hardware-thread, the complexity of non-sorting
+sub-image area-opening is $O(kn)$. This algorithm is detailed in figure
+\ref{fig:area-opening-no-sorting-sub-image}.
+
+\subsection{Pixel Queues}
+\label{sec:area-opening-no-sorting-pixel-queues}
+
+\begin{figure}
+  \centering
+
+  \lstinputlisting[widthgobble=2*1, linerange={filter0-filter1}]{../parallel-morphology/src/dk/itu/parallel/morphology/filter/QueuePixels.java}
+
+  \caption[Pixel queue filtering algorithm.]{Pixel queue filtering
+    algorithm. Pixels are re-added to the \inlinecode{lower} queue, if their
+    gray-level is less than the current level.}
+  \label{fig:area-opening-no-sorting-pixel-queues}
+\end{figure}
+
+The naive sub-image filtering algorithm, as shown in
+section~\ref{sec:area-opening-no-sorting-sub-image}, always runs in $O(kn)$: all
+pixels need to be scanned again for each gray-level of the image. If we want to
+take advantage of the fact, that each pixel only needs to be filtered explicitly
+once, we need a way to remove already filtered pixels from the work-list.
+
+A way to represent not yet filtered images is a concurrent queue data structure,
+for instance a \citet{Michael1996Simple} queue (see also
+section~\ref{sec:introduction-msq}) or a lock-free, bounded array queue (see
+implementation details of this data structure in
+appendix~\ref{sec:bounded-array-queue}). At initialization time, all pixels are
+added to the queue. This can be done in parallel by all threads. Then, each
+thread removes the next pixel from the tip of the queue and either filters the
+pixel, if it is at the current gray-level, or adds it to the end of the queue
+again.
+
+This approach has two issues: first, we would need to keep track of how many
+pixels we already have filtered and how many pixels we still expect to be in the
+queue, in order to decrease the current gray-level correctly. Secondly (and
+actually less importantly), we would encounter many conflicts during
+concurrently removing and adding pixels.
+
+To simplify the approach, we can instead use two queues, wrapped in a container
+class \inlinecode{Queues} (see appendix~\ref{sec:area-opening-queues} for
+details). It maintains one active, or upper, queue, that contains all pixel
+indices, that still need to be filtered for the current level, and one inactive,
+or lower, queue, to which all pixels that have not been filtered yet, are
+added. Now, the current gray-level can safely be decreased when the active queue
+is empty. The auxiliary function \inlinecode{swapAndDecrement} decrements the
+current gray-level and swaps active and inactive queues atomically. The
+implementation of \inlinecode{swapAndDecrement} is detailed in
+appendix~\ref{sec:area-opening-queues}.
+
+Analytically, this is still a linear-time operation. Assuming, that both adding
+and removing a pixel from a queue happens in constant time, the worst-case has a
+complexity of $O(n + kn) = O(kn)$. The algorithm is detailed in
+figure~\ref{fig:area-opening-no-sorting-pixel-queues}.
+
+\section{Thread-local Sorting Variants}
+\label{sec:area-opening-local-sorting}
+
+In this section, we will consider algorithms, that sort pixels in a thread-local
+manner. That means, that each thread executes a sequential sorting algorithm on
+some portion of pixels. The algorithms in this section extend the algorithms
+presented in section~\ref{sec:area-opening-no-sorting}.
+
+\subsection{Sub-Image Filtering}
+\label{sec:area-opening-local-sorting-sub-image}
+
+\begin{figure}
+  \centering
+
+  \lstinputlisting[widthgobble=2*1, linerange={filter0-filter1}]{../parallel-morphology/src/dk/itu/parallel/morphology/filter/SplitCounting.java}
+
+  \caption[Sub-image filtering algorithm with thread-local sorting.]{Sub-image
+    filtering algorithm with thread-local sorting. The sub-images are sorted
+    prior to filtering in order to avoid multiple scans of the image.}
+  \label{fig:area-opening-local-sorting-sub-image}
+\end{figure}
+
+The naive image splitting algorithm
+(section~\ref{sec:area-opening-no-sorting-sub-image}), does not make any use of
+the pixel properties, that allow linear-time sorting. To improve the algorithm's
+run-time complexity, we now first let each thread sort the pixels in its
+assigned interval and thereby remove the need for multiple scans of the
+image. Threads still synchronize on gray-level decrease. This results in a
+run-time complexity of $O(k + n + n) = O(k + n)$.
+
+In the Java implementation
+(figure~\ref{fig:area-opening-local-sorting-sub-image}), I use counting sort, as
+suggested by \citet{Meijster2002Comparison}. The algorithm terminates, if the
+current gray-level is below zero, i.e. all gray-levels have been
+filtered. Otherwise, we need to check, whether the current pixel's value is
+equal to the current gray-level and only filter it, if this is the case. If all
+pixels in this interval have been filtered, we assign -1 to the current pixel
+pointer \inlinecode{c}. If \inlinecode{c < 0}, we can directly jump to
+decrementing the thread-local level pointer and to synchronizing threads.
+
+\subsection{Line Queues}
+\label{sec:area-opening-local-sorting-queues}
+
+\begin{figure}
+  \centering
+
+  \lstinputlisting[widthgobble=2*1, linerange={filter0-filter1}]{../parallel-morphology/src/dk/itu/parallel/morphology/filter/QueueLines.java}
+
+  \caption[Line queue filter algorithm with thread-local per-line sorting.]{Line
+    queue filter algorithm with thread-local per-line sorting. The pixels of
+    each line are sorted via counting sort. Lines are shared across threads, in
+    order to avoid starvation. The \inlinecode{Line} interface provides
+    transparent access to the sorted pixels and maintains an internal pointer to
+    the current pixel.}
+  \label{fig:area-opening-local-sorting-queues}
+\end{figure}
+
+The queue-based approach from
+section~\ref{sec:area-opening-no-sorting-pixel-queues} to parallel area opening
+can easily be extended to the next greater unit of work-items in images. A class
+\inlinecode{Line} represents a line, containing an array of pixel indices (see
+appendix~\ref{sec:pixel-line}). It maintains an internal pointer to the current
+pixel index. The pointer can be moved transparently by a call to
+\inlinecode{advance}, which returns a Boolean indicating the success of the
+operation. It will fail, if there is no work left (i.e. all pixels have been
+filtered), which can also be queried directly using \inlinecode{workLeft} (see
+the full implementation in appendix~\ref{sec:pixel-line}).
+
+All threads join in the initialization phase, where each processes a line at a
+time thread-locally. Each line is sorted separately, using again counting
+sort. After the initialization phase, the double queue principle, as shown in
+section~\ref{sec:area-opening-no-sorting-pixel-queues}, is used. The Java
+implementation is displayed in
+figure~\ref{fig:area-opening-local-sorting-queues}.
+
+The advantage of this algorithm is two-fold. First, removing the requirement for
+re-scanning the image, or parts of it, is removed entirely. All work-items,
+pixels and lines, are removed from the queues as soon as they have been
+filtered. Secondly, this approach avoids a problem that can hurt the performance
+of sub-image filtering badly, causing extreme starvation. Consider the case of a
+gray-scale gradient in the image's $y$-direction. Using a sub-image filtering
+approach, this case essentially forces the threads to work in sequence, waiting
+idly for the one thread that is lucky to be assigned the sub-image, which holds
+all pixels of the current gray-level. This is not longer possible with the
+line-queues algorithm, as threads are not assigned a fixed portion of work, but
+share all data to support progress actively.
+
+The worst-case run-time complexity of the line-queues algorithm bases on the
+initialization-step, which is (sequentially) of $O(y_I(k + x_I)) = O(y_Ik +
+n)$. An additional cost is, of course, the union of pixels with their neighbors
+and the re-adding of each line of $O(y_I + n)$, so overall we get $O(y_Ik + y_I
++ 2n) = O(y_Ik + n)$.
+
+\section{Shared Sorting Variants}
+\label{sec:area-opening-shared-sorting}
+
+\begin{figure}
+  \centering
+
+  \lstinputlisting[widthgobble=2*1, linerange={filter0-filter1}]{../parallel-morphology/src/dk/itu/parallel/morphology/filter/BlockGrayLevel.java}
+
+  \caption[Per-level blocking filter algorithm with shared sorting.]{Per-level
+    blocking filter algorithm with shared sorting. The threads are again
+    synchronized on gray-level decrease.}
+  \label{fig:area-opening-shared-sorting}
+\end{figure}
+
+The last variant is to share the work of sorting the pixels of the image between
+all threads. Each thread iterates, in parallel, over the shared array of sorted
+pixels and performs \inlinecode{uniteNeighbors}, synchronizing again on
+gray-scale level decrease.
+
+There are two linear-time sorting algorithms that can be parallelized
+easily. The first one is the already mentioned counting-sort. To obtain a fully
+parallel variant, we cannot rely on partitioning the input data. Instead, the
+implementation here uses atomic integers and barriers to sort in parallel. One
+side-effect is, that the target array cannot be re-used, causing an increase of
+memory usage by $O(n)$. Also, the parallel sorting algorithm is not wait-free,
+since we need to synchronize between counting and insertion steps.
+
+The second algorithm is bucket sorting by maintaining an array of re-entrant
+queues. The array is of length $k$, with each index representing the subset of
+pixels at the indexes gray-scale level. To not cause a memory usage of $O(kn)$
+($k$ levels with possibly $n$ pixels each), it is mandatory to use an unbounded
+data structure, in order to maintain those subsets. I therefore chose to use
+Michael-Scott queues in order to keep memory usage low.
+
+Both algorithms are implemented in a data structure, that implements the
+\inlinecode{LinearPixelSort} interface. A thread can seamlessly start sorting by
+calling \inlinecode{sort} on a sub-type of \inlinecode{LinearPixelSort}, since
+the lock-free structure of both algorithms requires no knowledge of the number
+of threads participating in parallel sorting. Calling \inlinecode{next}, with a
+gray-scale level as argument, returns the next pixel at the given level, or
+\inlinecode{null}, if there are no pixels left at this level.
+
+Shared sorting is followed by gray-level wise filtering of pixels. The
+\inlinecode{level} variable is thread-local, to avoid additional
+contention. Each thread then retrieves the next pixel from the current level's
+queue. If retrieval was successful, i.e. the queue at the current level is not
+yet empty, the pixel is united with its valid neighbors. If not, the local level
+is decreased and the threads synchronize at the barrier. The full Java
+implementation of the filtering part of the algorithm is given in figure
+\ref{fig:area-opening-shared-sorting}. If executed sequentially, its run-time
+complexity is $O(k + n + n) = O(k + n)$
+
+%%% Local Variables:
+%%% mode: latex
+%%% TeX-master: "main"
+%%% End:

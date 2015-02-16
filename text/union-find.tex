@@ -1,0 +1,280 @@
+\chapter{Shared Union-Find Data Structures}
+\label{chpt:union-find}
+
+This chapter describes two different algorithms for a shared union-find
+\cite{Tarjan1983Data} data structure. The first one is the wait-free union-find
+algorithm by \citet{Anderson1994Waitfree}. The other one relies
+on fine-grained locking per disjoint tree \cite{Berman2010Multicore}.
+
+The following sections contain many different figures, that convey variants of
+parallel union-find. In order to explain the algorithms thoroughly, I believe
+that it is easiest for the reader to look at code examples. This is especially
+true, because the many variants of the union-find algorithm are very similar and
+the differences are very subtle, if explained in plain English. I deliberately
+omit introducing the original union-find by \citet{Tarjan1983Data} in favor of
+focusing on the concurrent algorithms.
+
+\section{A Wait-Free Implementation}
+\label{sec:union-find-wf}
+
+As described in section \ref{sec:introduction-concurrency}, wait-free concurrent
+algorithms have a number of desirable properties, compared to blocking
+algorithms. Therefore, \citet{Anderson1994Waitfree} developed a wait-free
+union-find algorithm, based on the \emph{CAS} primitive. Their implementation
+uses ranking heuristics to balance trees, in order to maintain short chains
+between leafs and roots.
+
+The wait-free union-find algorithm represents nodes in an array of records,
+called \inlinecode{record} and again accessible through a function of the same
+name. Each \inlinecode{Record} contains an integer representation of the rank
+of a tree and an (atomic) integer pointing to the index of the record's parent
+in the array. The implementation of \inlinecode{Record} is shown in
+figure~\ref{fig:union-find-wf-union-record}.
+
+\begin{figure}
+  \centering
+  \lstinputlisting[linerange={record0-record1}]{../parallel-union-find/src/dk/itu/parallel/unionfind/WaitFree.java}
+  \caption[The \inlinecode{Record} class, as used in wait-free union-find.]{The
+    \inlinecode{Record} class, as used in wait-free union-find. Maintaining the
+    rank and the pointer to the node's parent in this object allows an atomic
+    update of both variables using \emph{CAS}.}
+  \label{fig:union-find-wf-union-record}
+\end{figure}
+
+The parent pointer initially points to the index of the record itself, to
+indicate that it is a root. It is here implemented as an atomic reference, to
+make implementing a wait-free path-compressing \inlinecode{find} easy. If
+\inlinecode{find} was not to compress paths, it could simply traverse up to the
+root. This would be wait-free already, as \inlinecode{find} does not guarantee
+anything but to return a node that was root at some point in time
+\cite{Anderson1994Waitfree}. To compress paths in a wait-free manner,
+\citet{Anderson1994Waitfree} implement their find using path-halving:
+
+\lstinputlisting[style=inline, linerange={find0-find1}]{../parallel-union-find/src/dk/itu/parallel/unionfind/WaitFree.java}
+
+The parent pointer of each visited node is set to the node's grandparent, if no
+other thread modified the parent pointer in the meantime. If another thread
+interfered, the failed \emph{CAS} is simply ignored and traversal continues.
+
+Uniting two disjoint trees is a matter of updating the parent pointer of a node,
+as well as its rank. To perform this update atomically,
+\citet{Anderson1994Waitfree} use the \inlinecode{Record} object associated with
+this node. The record of the node, which will be updated, is atomically replaced
+by a record pointing to the new record and maintaining a new rank. This update
+is performed by the auxiliary function \inlinecode{updateRoot}. It terminates
+early, if another thread modified the soon-to-be child node at
+\inlinecode{x}. Otherwise, it simply returns to the caller, whether the update
+has been successful:
+
+\lstinputlisting[style=inline, linerange={updateroot0-updateroot1}]{../parallel-union-find/src/dk/itu/parallel/unionfind/WaitFree.java}
+
+While this would already be enough to implement a wait-free \inlinecode{union},
+\citet{Anderson1994Waitfree} acknowledge, that this can result in long chains,
+if multiple threads unite trees, without the rank of the root being incremented
+successfully. To counter this, they add a call to \inlinecode{setRoot}, which
+performs a \inlinecode{find}-like traversal and compression. Finally,
+\inlinecode{setRoot} tries to update the rank of the root by one atomically,
+using \inlinecode{updateRoot}:
+
+\lstinputlisting[style=inline, linerange={setroot0-setroot1}]{../parallel-union-find/src/dk/itu/parallel/unionfind/WaitFree.java}
+
+The \inlinecode{union} function, in its entire form, is depicted in figure
+\ref{fig:union-find-wf-union}.
+
+\begin{figure}
+  \lstinputlisting[linerange={union0-union1,union2-union3,union4-union5}]{../parallel-union-find/src/dk/itu/parallel/unionfind/WaitFree.java}
+  \caption[Wait-free implementation of \inlinecode{union}.]{Wait-free
+    implementation of \inlinecode{union}. \citet{Anderson1994Waitfree}
+    acknowledge, that this implementation of concurrent \inlinecode{union} can
+    result in long chains in the disjoint tree structure.}
+  \label{fig:union-find-wf-union}
+\end{figure}
+
+\subsection{Adaption to Area Opening}
+\label{sec:union-find-wf-adaption}
+
+A major flaw of \citeauthor{Anderson1994Waitfree}'s wait-free union-find
+algorithm is the spuriously occurring failure of updating ranks, as well as the
+temporary inconsistencies between node updates \cite{Anderson1994Waitfree,
+  Berman2010Multicore}. Updating the size of a root node, together with updating
+references to it, is key to label connected components correctly. Otherwise,
+another thread could grow a component, while another is in-between updating the
+root pointer and updating the new root's size, which are independent from each
+other. This can result in uniting pixel sets based on wrong priorities. Using
+\inlinecode{Record} as a container to update rank and parent pointer atomically,
+works only for updating both values on the same node and does therefore not
+provide a solution to the problem.
+
+This is a manifestation of the missing composition capabilities of
+synchronization primitives, as already mentioned in section
+\ref{sec:introduction-cas}. \citet{Herlihy2008Art} give a proof, that there is
+no wait-free implementation to assign values to multiple, independent fields
+(i.e. an $(m,n)$-assignment) consistently.
+
+This means that the wait-free union-find algorithm cannot be directly applied to
+our problem.
+
+\subsection{STM Variant}
+\label{sec:union-find-wf-stm}
+
+To update two independent nodes atomically when computing area opening, we can
+resort to an \emph{STM} version of \citeauthor{Anderson1994Waitfree}'s
+algorithm. The \inlinecode{find} routine stays entirely wait-free and still
+performs path compression by path-halving, as shown in
+figure~\ref{fig:union-find-wf-stm-find}. It is now mandatory to avoid compressing the path
+to a negative parent pointer, as that would result in removing a sub-tree from
+its root.
+
+\begin{figure}
+  \centering
+  \lstinputlisting[linerange={find0-find1}]{../parallel-morphology/src/dk/itu/parallel/morphology/unionfind/Transactional.java}
+  \caption[Wait-free \inlinecode{find} for area opening.]{Wait-free
+    \inlinecode{find} for area opening. \emph{multiverse}'s
+    \inlinecode{atomicWeakGet} corresponds to \inlinecode{get} on Java's atomic
+    types; \inlinecode{atomicCompareAndSet} corresponds to
+    \inlinecode{compareAndSet}. As soon as the \inlinecode{parent} value of a
+    node is equal or below zero, it will not be set to below zero again.}
+  \label{fig:union-find-wf-stm-find}
+\end{figure}
+
+The concept of records is not required any longer. Also, ranking and the
+according rank updates are removed, in order to model the correct relation of
+pixels to each other \cite{Meijster2002Comparison}. This implies also the
+removal of \inlinecode{updateRoot} and \inlinecode{setRoot}.
+
+The wait-free \inlinecode{union}'s while-pattern is still required by the
+algorithm, if we use negative values to model component size, while compressing
+the paths using a wait-free \inlinecode{find}. Otherwise, we can run into
+complications when checking, whether the negated parent value (i.e. the size) is
+less than \inlinecode{lambda} (see figure \ref{fig:union-find-wf-stm-union}).
+
+\begin{figure}
+  \centering
+  \lstinputlisting[linerange={union0-union1,union2-union3,union4-union5}]{../parallel-morphology/src/dk/itu/parallel/morphology/unionfind/Transactional.java}
+  \caption[STM \inlinecode{union} for area opening.]{STM \inlinecode{union} for
+    area opening. \inlinecode{TxnVoidCallable} is a \emph{multiverse} wrapper
+    class, similar to the \inlinecode{Callable} interface. Note that the
+    while-loop is still required, in order to catch modifications by wait-free
+    \inlinecode{find}.}
+  \label{fig:union-find-wf-stm-union}
+\end{figure}
+
+Moreover, we can implement conditional deactivation of not-united root nodes. If
+a to-be-deactivated root already exceeds \inlinecode{lambda}, it does not need
+to be deactivated explicitly. Short-circuiting this operation saves overhead due
+to unnecessary modifications by the transaction, which would otherwise come at
+the considerable cost of copying and modifying the variable and then committing
+the changes \cite{Herlihy2008Art}.
+
+To compare the performance of using an explicit while-loop , I implemented a
+general version of \citeauthor{Anderson1994Waitfree}'s union-find with
+\emph{STM} modifications, as well as a simple \emph{STM} implementation. The
+latter simply wraps the sequential \inlinecode{union} in a single transaction.
+
+\section{An Optimistic Implementation}
+\label{sec:union-find-optimistic}
+
+\begin{figure}
+
+  \lstinputlisting[linerange={union0-union1,union2-union3,union4-union5}]{../parallel-union-find/src/dk/itu/parallel/unionfind/Optimistic.java}
+
+  \caption[Optimistic locking implementation of \inlinecode{union}.]{Optimistic
+    locking implementation of \inlinecode{union}. The algorithm performs
+    \inlinecode{find}, until it has acquired the locks for the actual roots.}
+  \label{fig:union-find-optimistic-union}
+\end{figure}
+
+Typically, locks are used globally for data structures. This blocks threads from
+performing changes, while another thread is modifying some part of the
+data. While easier to implement, this leads to high contention, as the progress
+of all threads \emph{not} holding the global lock is blocked, even if their
+modifications would not collide with those of the active thread. This is not
+acceptable for efficient parallel algorithms.
+
+Another approach is optimistic, or fine-grained, locking of resources. A thread
+only acquires locks for those parts of a data structure, that it wants to modify
+consistently. Writing to an array at different indices is probably the best
+example for a data structure, that invites such a locking scheme, as each index
+of the array can get assigned a unique lock.
+
+In his thesis, \citet{Berman2010Multicore} developed a union-find algorithm
+based on optimistic locking. He claims that this approach outperforms the
+wait-free union-find implementation by \citet{Anderson1994Waitfree}. In his
+implementation, the disjoint sets are represented by three arrays of the same
+length: one array \inlinecode{next}, that, for each node, holds a pointer to
+either the parent index or to itself, if it is root. Another array
+\inlinecode{rank}, that maintains the rank of each node, and finally an array
+\inlinecode{lock}, that maintains a lock for each node in the disjoint set
+structure \cite{Berman2010Multicore}.
+
+To update the relation of two trees consistently, \citet{Berman2010Multicore}
+uses a (not further described) function \inlinecode{lock\_roots} that locks two
+trees in the forest of disjoint trees by acquiring the locks only for the
+respective root nodes. Java does not provide a two-object locking
+mechanism. Therefore, the Java implementation uses a simple double-lock
+algorithm on the \inlinecode{lock} array, which is of type
+\inlinecode{ReentrantLock[]}. This algorithm is based on a simple lock algorithm
+given by \citet{Herlihy2008Art}. Unlocking both trees, in case acquiring both
+locks failed, ensures that no deadlocking occurs, in case a thread only
+successfully acquired one lock:
+
+\lstinputlisting[style=inline, linerange={lock0-lock1}]{../parallel-union-find/src/dk/itu/parallel/unionfind/Optimistic.java}
+
+\citet{Berman2010Multicore} proposes a scheme that, once it acquired the locks
+for two nodes, checks that these nodes are still roots. The fine-grained locking
+makes it possible for the nodes to change their state, while a thread waits to
+acquire their locks. In the Java implementation, this locking scheme is
+integrated into \inlinecode{union}, as shown in figure
+\ref{fig:union-find-optimistic-union}.
+
+Another notable difference to the wait-free algorithm is the path
+compression. The optimistic algorithm compresses paths only after successfully
+uniting two sets, while still holding the locks \cite{Berman2010Multicore}. This
+makes \inlinecode{find} fully wait-free, as no locks must be acquired during
+traversal. Path compression is implemented by re-assigning the parent pointer of
+each node along the path to the root's index.
+
+\subsection{Adaption to Area Opening}
+\label{sec:union-find-optimistic-adaption}
+
+For the optimistic union-find implementation, the changes for using it in area
+opening are nearly negligible. Here as well, both pixel's roots must be found
+prior to proceeding. Updating the size of a tree at the root node and the parent
+pointer of another node, in order to make it to point to the new root, is not an
+issue in a lock-based implementation. Again, ranking heuristics are removed
+\cite{Meijster2002Comparison}.
+
+\begin{figure}
+  \centering
+  \lstinputlisting[linerange={compress0-compress1}]{../parallel-morphology/src/dk/itu/parallel/morphology/unionfind/Optimistic.java}
+  \caption[The \inlinecode{compress} function for optimistic area opening.]{The
+    \inlinecode{compress} function for optimistic area opening. It is only
+    executed when the thread holds the corresponding lock for the node at
+    \inlinecode{root}.}
+  \label{fig:union-find-optimistic-adaption-compress}
+
+  \lstinputlisting[linerange={union0-union1,union2-union3}]{../parallel-morphology/src/dk/itu/parallel/morphology/unionfind/Optimistic.java}
+  \caption[Optimistic \inlinecode{union} for area opening.]{Optimistic
+    \inlinecode{union} for area opening. The paths are compressed w.r.t. success
+    or failure of uniting the two sets.}
+  \label{fig:union-find-optimistic-adaption-union}
+\end{figure}
+
+In order to determine whether found nodes are still roots, it is sufficient to
+check, whether their \inlinecode{parent} value is below zero. As soon as a
+node's \inlinecode{parent} value is equal to or greater than zero, it will not
+be re-set to below zero, since this union-find structure does not support
+deletion. The same goes for the wait-free implementation of \inlinecode{find}.
+
+Another modification is the compression of paths (see
+figure~\ref{fig:union-find-optimistic-adaption-compress}), which depends on the
+success or failure of conditional union. If the trees have been united, both
+trees are compressed to the same root. Otherwise, their respective original
+roots are used as compression targets. The complete algorithm for optimistic
+\inlinecode{union}, adapted to area opening, is shown in
+figure~\ref{fig:union-find-optimistic-adaption-union}.
+
+%%% Local Variables:
+%%% mode: latex
+%%% TeX-master: "main"
+%%% End:

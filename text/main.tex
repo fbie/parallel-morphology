@@ -1,0 +1,199 @@
+\documentclass[a4paper]{report}
+
+\usepackage[utf8]{inputenc}
+
+\usepackage{amsfonts}
+\usepackage{amsmath}
+
+\usepackage{graphicx}
+\usepackage{subcaption}
+
+\usepackage{url}
+\usepackage{hyperref}
+
+\usepackage{gensymb}
+
+\usepackage[square,sort,comma,numbers]{natbib}
+\usepackage{pdfpages}
+
+\usepackage{listings}
+\usepackage{color}
+
+% preamble
+
+\definecolor{comments}{rgb}{0.4, 0.4, 0.4}
+\renewcommand{\ttdefault}{pcr}
+
+\lstset{
+  language=Java,
+  tabsize=2,
+  basicstyle=\footnotesize\ttfamily,
+  keywordstyle=\bfseries,
+  commentstyle=\itshape\color{comments},
+  frame=single,
+  numbers=none,
+  breakatwhitespace=true,
+  breaklines=true,
+  keepspaces=false,
+  rangeprefix=/*---,
+  rangesuffix=---*/,
+  includerangemarker=false,
+  columns=fullflexible,
+  firstnumber=auto,
+  literate={private}{}1 {protected}{}1
+}
+
+\lstdefinestyle{inline}{
+  frame=L,
+  numbers=none
+}
+
+%%% start lstinputlistings
+% Taken from
+% http://tex.stackexchange.com/questions/48903/how-to-extend-the-lstinputlisting-command
+
+\newlength{\rawgobble}
+\newlength{\gobble}
+\newlength{\gobblea}
+
+% The width of a single space. basicstyle from lstset should be used
+\sbox0{\Huge\ttfamily \ }
+
+% Remove a single space
+\settowidth{\rawgobble}{\Huge\ttfamily \ }
+\setlength{\rawgobble}{-\rawgobble}
+
+\makeatletter
+\def\sepstar#1*#2\relax{%
+    \def\sepstarone{#1}%
+    \def\sepstartwo{#2}%
+}
+\lst@Key{firstlineandnumber}\relax{\def\lst@firstline{#1\relax}\def\lst@firstnumber{#1\relax}}
+\lst@Key{widthgobble}{0*0}{
+    % Reindent a bit by multiplying with 0.9,
+    % then multiply by tabsize and number of
+    % indentation levels
+    \sepstar #1\relax
+    \setlength{\gobble}{0.9\rawgobble}
+    \setlength{\gobble}{\sepstarone\gobble}
+    \setlength{\gobble}{\sepstartwo\gobble}
+    \setlength{\gobblea}{\gobble}
+    \addtolength{\gobblea}{10pt}
+    \def\lst@xleftmargin{\gobble}
+    \def\lst@framexleftmargin{\gobble}
+    \def\lst@numbersep{\gobblea}
+}
+\makeatother
+
+%%% end lstinputlistings
+
+\newcommand{\inlinecode}[1]{{\footnotesize\texttt{#1}}}
+\newcommand{\todo}[1]{\textcolor{red}{\textbf{To Do:} #1}}
+
+% content
+\begin{document}
+
+\includepdf[pages={1}]{itu-frontpage.pdf}
+
+\newpage
+
+~ % Purposly empty
+\thispagestyle{empty}
+
+\newpage
+
+\begin{titlepage}
+  \begin{center}
+    \vspace*{1cm}
+
+    {\LARGE \textbf{Connected Set Filtering on Shared Memory Multiprocessors}}
+
+    \vspace{1.5cm}
+
+    Submitted in partial fulfillment of the requirements\\
+    towards the M.Sc. degree
+
+    \vspace{0.8cm}
+
+    by\\
+
+    \vspace{0.8cm}
+
+    {\Large \textbf{Florian Biermann}}\\
+    \texttt{fbie@itu.dk}
+
+    \vfill
+
+    IT University of Copenhagen\\
+    Denmark
+
+    \vspace{0.8cm}
+
+    The research work in this thesis has been carried out\\
+    under the supervision of Prof. Peter Sestoft.
+
+    \vspace{1.5cm}
+
+    June 2, 2014
+
+  \end{center}
+\end{titlepage}
+
+\pagenumbering{roman}
+
+\newpage
+
+~ % Purposly empty
+\thispagestyle{empty}
+
+\newpage
+
+\input{abstract.tex}
+
+\newpage
+
+~ % Purposly empty
+\thispagestyle{empty}
+
+\newpage
+
+\tableofcontents
+
+\listoffigures
+
+\listoftables
+
+\newpage
+
+~ % Purposly empty
+
+\newpage
+
+\input{plot-commands.tex}
+
+\pagenumbering{arabic}
+
+\input{introduction.tex}
+
+\input{morphology.tex}
+
+\input{union-find.tex}
+
+\input{area-opening.tex}
+
+\input{correctness.tex}
+
+\input{experiments.tex}
+
+\input{discussion.tex}
+
+\input{conclusion.tex}
+
+\bibliographystyle{unsrtnat}
+\bibliography{thesis.bib}
+
+\appendix
+
+\input{appendix.tex}
+
+\end{document}

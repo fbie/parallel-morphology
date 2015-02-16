@@ -1,0 +1,131 @@
+\newcommand{\synthone}{area-open-14-05-14-18-25-15-fbie@mtlab-synth001_large_jpg-3000-10}
+\newcommand{\synthtwo}{area-open-14-05-14-18-25-15-fbie@mtlab-synth002_large_jpg-3000-10}
+
+\newcommand{\synththreea}{area-open-14-05-14-13-01-07-fbie@mtlab-synth003_large_jpg-3000-10}
+\newcommand{\synththreeb}{area-open-14-05-15-12-14-54-fbie@dolab-synth003_large_jpg-6000-10}
+\newcommand{\synththreec}{area-open-14-05-16-12-28-50-fbie@dolab-synth003_large_jpg-9000-10}
+
+\newcommand{\synthfour}{area-open-14-05-13-17-33-25-fbie@dolab-synth004_large_jpg-3000-10}
+\newcommand{\synthfive}{area-open-14-05-14-18-23-10-fbie@dolab-synth005_large_jpg-3000-10}
+
+\newcommand{\pixel}{area-open-14-04-23-09-11-21-fbie@dolab-synth004_jpg-1500-10}
+
+\newcommand{\natone}{area-open-14-05-02-11-45-18-fbie@dolab-natural001_large_jpg-1500-10}
+\newcommand{\nattwo}{area-open-14-04-23-09-11-21-fbie@dolab-natural002_jpg-1500-10}
+\newcommand{\natthree}{area-open-14-04-23-09-11-21-fbie@dolab-natural003_jpg-1500-10}
+
+\newcommand{\plotdata}[1]{-d#1}
+\newcommand{\plotinclude}[1]{-i#1}
+\newcommand{\plotremove}[1]{-r#1}
+
+\newcommand{\ms}{\plotdata{ms}}
+\newcommand{\retries}{\plotdata{retries}}
+\newcommand{\cache}{\plotdata{cache-misses}}
+\newcommand{\instructions}{\plotdata{instructions}}
+\newcommand{\gc}{\plotdata{gc}}
+\newcommand{\prefetches}{\plotdata{prefetches}}
+
+\newcommand{\opt}{\plotinclude{opt}\plotremove{array|bucket}}
+\newcommand{\stm}{\plotinclude{stm}\plotremove{array|bucket}}
+
+\newcommand{\plotsingle}[3]
+{
+  \begin{subfigure}{0.55\textwidth}
+    \includegraphics[width=\textwidth]{plots/#1.pdf}
+    \caption{#2}
+    \label{fig:#3}
+  \end{subfigure}
+}
+
+\newcommand{\plotrow}[6]
+{
+  \makebox[\textwidth][c]{
+    \plotsingle{#1}{#2}{#3}
+    \plotsingle{#4}{#5}{#6}
+  } %makebox
+}
+
+\newcommand{\unionfindplotlow}[1]
+{
+  \plotrow
+  {union-find-14-04-08-14-23-26-fbie@dolab-n500000_p0_000001_gr-10-d#1}
+  {\emph{low-low}}
+  {uf-results-#1-low-low}
+  {union-find-14-04-08-14-23-26-fbie@dolab-n500000_p0_000005_gr-10-d#1}
+  {\emph{low-high}}
+  {uf-results-#1-low-high}
+}
+
+\newcommand{\unionfindplothigh}[1]
+{
+  \plotrow
+  {union-find-14-04-08-14-23-26-fbie@dolab-n1000000_p0_000005_gr-10-d#1}
+  {\emph{high-low}}
+  {uf-results-#1-high-low}
+  {union-find-14-04-08-14-23-26-fbie@dolab-n1000000_p0_00001_gr-10-d#1}
+  {\emph{high-high}}
+  {uf-results-#1-high-high}
+}
+
+\newcommand{\areaopenplotpixels}
+{
+  \plotrow
+  {\pixel\ms\plotinclude{pixel}}
+  {Duration in milliseconds.}
+  {pixel-queues-ms}
+  {\pixel\retries\plotinclude{pixel}}
+  {Number of re-tries.}
+  {pixel-queues-retries}
+
+  \plotrow
+  {\pixel\cache\plotinclude{pixel}}
+  {Number of cache misses.}
+  {pixel-queues-cache-misses}
+  {\pixel\instructions\plotinclude{pixel}}
+  {Number of issued CPU instructions.}
+  {pixel-queues-instructions}
+}
+
+\newcommand{\fullrow}[3]
+{
+  \plotrow
+  {#1\plotdata{#2}\opt}
+  {Optimistic}
+  {#3-opt-#2}
+  {#1\plotdata{#2}\stm}
+  {STM}
+  {#3-stm-#2}
+}
+
+\newcommand{\fullmsrow}[2]
+{
+  \fullrow{#1}{ms}{#2}
+}
+
+\newcommand{\fullrawrow}[3]
+{
+  \plotrow
+  {raw/#1\plotdata{#2}\plotinclude{opt}}
+  {Optimistic}
+  {#3-opt-#2}
+  {raw/#1\plotdata{#2}\plotinclude{stm}}
+  {STM}
+  {#3-stm-#2}
+}
+
+\newcommand{\fullrawrownat}[3]
+{
+  \plotrow
+  {raw/#1\plotdata{#2}\plotinclude{opt}\plotremove{pixel}}
+  {Optimistic}
+  {#3-opt-#2}
+  {raw/#1\plotdata{#2}\plotinclude{stm}\plotremove{pixel}}
+  {STM}
+  {#3-stm-#2}
+}
+
+
+%%% Local Variables:
+%%% mode: latex
+%%% TeX-master: "main"
+%%% End:

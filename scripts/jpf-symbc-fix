@@ -1,0 +1,24 @@
+From 86c9ffcfaaac567f56ad09691b8893b15118db7f Mon Sep 17 00:00:00 2001
+From: Florian Biermann <fbie@itu.dk>
+Date: Thu, 1 May 2014 13:22:25 +0200
+Subject: [PATCH] jpf-core: fix accessing string at with indices
+
+---
+ .../main/gov/nasa/jpf/symbc/SymbolicListener.java  | 1 +-
+ 1 file changed, 1 insertions(+), 1 deletions(-)
+
+diff --git a/src/main/gov/nasa/jpf/symbc/SymbolicListener.java b/src/main/gov/nasa/jpf/symbc/SymbolicListener.java
+index 42104fe..cf9c843 100644
+--- a/jpf-symbc/src/main/gov/nasa/jpf/symbc/SymbolicListener.java
++++ b/src/main/gov/nasa/jpf/symbc/SymbolicListener.java
+@@ -144,7 +144,7 @@ public class SymbolicListener extends PropertyListenerAdapter implements Publish
+ 				      ((PCChoiceGenerator) cg).getCurrentPC() != null){
+ 				PathCondition pc = ((PCChoiceGenerator) cg).getCurrentPC();
+ 				String error = search.getLastError().getDetails();
+-				error = "\"" + error.substring(0,error.indexOf("\n")) + "...\"";
++				//error = "\"" + error.substring(0,error.indexOf("\n")) + "...\"";
+ 				// C: not clear where result was used here -- to review
+ 				//PathCondition result = new PathCondition();
+ 				//IntegerExpression sym_err = new SymbolicInteger("ERROR");
+--
+1.9.1

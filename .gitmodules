@@ -1,0 +1,4 @@
+[submodule "GTGraph"]
+	path = GTGraph
+	url = https://github.com/dhruvbird/GTgraph
+	ignore=dirty

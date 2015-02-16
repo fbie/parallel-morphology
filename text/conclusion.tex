@@ -1,0 +1,47 @@
+\chapter{Conclusion}
+\label{chpt:conclusion}
+
+In this thesis, I presented a variety of parallel algorithms to compute
+morphological area opening based on the sequential, union-find based algorithm
+by \citet{Meijster2002Comparison}. In particular, one of these parallel
+algorithms -- namely parallel sub-image area opening with thread local pixel
+sorting, which is based on a concurrent union-find data structure, that uses a
+fine-grained locking scheme -- proved to outperform the sequential algorithm on
+irregularly structured and flat images. Nevertheless, there exist at least two
+pathological cases of input images, which let the performance of the new
+parallel algorithm deteriorate. Future work should aim at finding a solution to
+this. Additionally, I defined formal correctness conditions and showed that
+model checking the new, parallel area opening algorithms through Java Pathfinder
+\cite{Visser2003Model} does not reveal any errors. JPF identified bugs in
+deliberately buggy implementations, which suggests that the here developed
+algorithms are correct.
+
+Furthermore, I provided a detailed discussion of the original sequential
+algorithm, as well as its formalization and examples of its filtering effect on
+images. Additionally, I identified parallel union-find algorithms that can be
+mapped to area opening. The various union-find algorithms have been examined in
+detail and their performance has been assessed independently on differently
+structured input graphs. This showed that wait-free union-find and a mixed
+wait-free and STM union-find algorithm outperform optimistic, fine-grained
+locking union-find on graphs of high connectivity, since lock contention on a
+single giant connected component is simply too high.
+
+In contrast to this, we saw that these limitations do not necessarily apply to
+parallel sub-image area opening, because here, each thread starts its work on
+pixels on the image, which, on the array of image pixels, are located ``far
+away'' from each other. Extensive lock contention is limited to a small portion
+of work at the end of the filtering process. In the case of parallel area
+opening, STM implementations of union-find exhibit systematically lower
+performance. This might be due to the chosen STM library and further research on
+this is needed.
+
+This thesis opens up for many future research directions. While some of these
+suggestions focus on validation and extension of the results presented in this
+thesis, others focus on technical improvements. I believe that both are highly
+relevant for parallel area opening to become a fast and reliable tool for use in
+image analysis.
+
+%%% Local Variables:
+%%% mode: latex
+%%% TeX-master: "main"
+%%% End:

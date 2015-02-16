@@ -1,0 +1,135 @@
+\chapter{Discussion}
+\label{chpt:discussion}
+
+\section{Contributions}
+\label{sec:discussion-contribution}
+
+As a major result, we can conclude, from the findings made in
+section~\ref{sec:experiments-area-opening}, that sub-image area opening with
+thread-local sorting, using a fine-grained optimistic locking scheme for the
+union-find implementation, is the most efficient and robust parallel algorithm
+presented in this thesis.
+
+Model checking, as shown in chapter~\ref{chpt:correctness}, showed that the
+parallel algorithm compute the same result as the sequential algorithm by
+\citet{Meijster2002Comparison}. It benefits from an inherent heuristic, which is
+an expectable large distance between the pixel start indices on the image array
+for the independent threads. Therefore, lock contention on single trees is low
+in most of the cases. There are two cases, however, which pose worst case
+scenarios to the algorithm. These are image gradients in $x$- or $y$-direction,
+which dominate the image structure. In these cases, the algorithm is either (1)
+forced to work in a sequential fashion, which is slower than the sequential
+baseline, due to the threading overhead, or (2) encounters high lock contention,
+due to level components extending excessively across sub-image borders.
+
+It is interesting to see that parallel algorithms with the same formal
+complexity behave very differently in practice. For example, the shared sorting
+algorithms, which run in $O(k + n)$, do not perform well in any case, while the
+most naive algorithm in $O(kn)$ (that is, sub-image filtering without sorting)
+is second to best in every experiment.
+
+Effects such as false sharing \cite{Bolosky1993False} and lock contention have a
+huge influence on the actual performance. So does the input structure, apart
+from its size, as we saw in the results obtained by independent union-find
+experiments, shown in section~\ref{sec:experiments-uf-results}. Here, the
+connectivity of the input graph made a large difference in terms of performance.
+
+A similar algorithm for labeling connected flat components on gray-scale images,
+based on union-find was proposed by \citet{Hesselink2001Concurrent}. The
+algorithm they proposed does \emph{not} compute area opening, which is the major
+difference to this thesis. Their approach uses no shared union-find data
+structure, but a message passing system through which ownership of disjoint sets
+is moved between threads. This means that Hesselink et al.'s approach does not
+benefit from implicitly shared data structures. Still, their results show that
+their algorithm scales linearly with the number of hardware threads. Even though
+their algorithm and the ones developed in this thesis are closely related, they
+are only comparable to some degree.
+
+Sub-image parallel area opening, in its current version, does not scale linearly
+with the number of hardware threads. In the presented experimental results, it
+first begins to show a noticeable improvement over the sequential algorithm when
+running on four threads, and already stops improving at around eight to ten
+threads. This upper bound will presumably increase with the size of the
+input. Nevertheless, this also means that, in order to gain a substantial
+performance improvement, we need to provide the algorithm with a sufficiently
+large image to filter. This suggests that the sequential algorithm by
+\citet{Meijster2002Comparison} already performs optimally.
+
+The number of algorithms developed in this thesis is comparably large in order
+to give a comprehensive overview over efficient parallelization strategies for
+area opening. Knowing which algorithms yield good performances, only analyzing a
+few of those with less parameters (i.e. parallel union-find variants, different
+implementations of auxiliary data structures, etc.) will provide further
+interesting insights.
+
+\section{Future Work}
+\label{sec:future-work}
+
+Taken the insights found in this thesis, there are quite a number of
+possibilities for further research directions and implementation work. For
+example, a more remote task would be bug-fixing and extending JPF to be able to
+fully model check the presented algorithms.
+
+In order to perform a more general verification of area opening algorithms, it would be
+helpful to find the ``sweet spot'' between operational correctness conditions,
+as presented in section~\ref{sec:correctness-area-opening-properties-ao}, and
+black-box testing conditions, as shown in
+section~\ref{sec:correctness-experimental}. This could help to identify and
+verify even more efficient parallel area opening algorithms and also to verify
+generalizations of parallel area opening. Such properties should also focus more
+on consistency. A node's parent value is invariant as soon as it is equal or
+greater to zero, so that $I: ~ 0 \leq \inlinecode{parent(find(x))}$ and $\{I\} ~
+c ~ \{I\}$, where $c$ is any function defined in
+section~\ref{sec:morphology-algorithm}.  This invariant implies the absence of
+deletion in the union-find data structure and should be part of an extended
+formal validation of parallel area opening to ensure consistency.
+
+As already pointed out, there exists a generalized variant of area opening,
+namely morphological attribute opening \cite{Breen1996Attribute}. The sub-image
+area opening algorithm could, in principle, easily be extended to attribute
+openings, as done by \citet{Wilkinson2000Fast} for the sequential algorithm
+\cite{Meijster2002Comparison}. Additionally, \citet{Meijster2001Fast} showed
+that union-find based area opening can directly be projected onto the
+computation of area granulometry, or area pattern spectra
+\cite{Meijster2002Comparison}. Area pattern spectra are histograms of the size
+distribution over a given image \cite{MohanaRao2001Areagranulometry}. Computing
+these spectra is helpful in order to estimate the average size of elements that
+are expected to pose the majority of an image for further segmentation.
+
+It would be interesting to assess the performance of sub-image parallel area
+opening more deeply. In order to avoid the issues of micro benchmarks in managed
+languages like Java, one could re-implement the algorithm in a medium-level
+language, such as C or C{}\verb!++!. Additionally, the algorithm could be
+extended to also filter 3D voxel images. Based on the findings that large images
+benefit more from the parallel algorithms, the performance on three dimensional
+data can be expected to be very fast. Furthermore, the performance of sub-image
+parallel area opening should be compared systematically to the performance of
+parallel Max-Tree computation \cite{Wilkinson2008Concurrent}.
+
+Also, the number of regional maxima on images could then be controlled to a
+greater extend, for example by controlling the number of level components
+explicitly, and there would be more room for more exhaustive performance
+experiments.
+
+Furthermore, the sub-image filtering algorithm needs to be stabilized against
+worst case image scenarios. One approach could be to simply use the sequential
+algorithm in such cases, based on a heuristic analysis of the image
+structure. Analyzing the image entirely once, and then filtering it, is, on
+average, probably just as slow as always simply running the parallel
+algorithm. Instead, one could examine how the image can be split up between
+threads, as to avoid sub-image patterns, which are prone to contention with
+regard to image structure. For example, instead of defining intervals on the
+pixel array, in which each thread may access pixels, one could assign a
+rectangle of pixels to each thread that is also limited on the $x$ axis.
+
+Lastly, one should mention that modern GPUs provide a fast platform for parallel
+image algorithms and it is therefore tempting to think about an area opening
+algorithm for GPUs. An approach to implementing sub-image parallel area opening
+on GPUs could be a union of the algorithm presented in this thesis and the
+cross-thread message passing union-find algorithm for flat component labeling,
+as presented by \citet{Hesselink2001Concurrent}.
+
+%%% Local Variables:
+%%% mode: latex
+%%% TeX-master: "main"
+%%% End:

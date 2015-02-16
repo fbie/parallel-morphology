@@ -1,0 +1,425 @@
+\chapter{Correctness}
+\label{chpt:correctness}
+
+This chapter is devoted to the correctness of the algorithms presented in
+chapter~\ref{chpt:area-opening}. An inherent problem of parallel and concurrent
+programs is the non-determinism of interleavings between independent
+threads. Because of this, standard unit-testing of parallel code, as done with
+sequential code, is not enough to ensure the absence of errors.
+
+Instead, there exist a number of formal methods to verify parallel programs. One
+of the first formal frameworks to reason about correctness in concurrent
+programs developed, was \emph{Communicating Sequential Programs} (CSP)
+\cite{Hoare1978Communicating}. CSP allows manual reasoning and proving of
+programs, but there also exist digital implementations \cite{Roscoe1997Theory}.
+
+Another, more practical approach is model checking \cite{Visser2003Model}. The
+advantage of model checking is that it can easily be fully automated. However,
+model checking suffers from analyzing huge state-spaces. In this chapter, I will
+focus on showing the absence of errors in the parallel area opening algorithms
+through model checking by explicit state enumeration using \emph{Java
+  Pathfinder} \cite{Visser2003Model}. Additionally, I will briefly touch upon
+the possibilities of unit-testing parallel area opening.
+
+\section{Experimental Correctness Verification}
+\label{sec:correctness-experimental}
+
+In contemporary software engineering, unit-testing is an often used tool to
+assure that independent parts of a program behave correctly. Input values must
+be provided manually, which means that testing is basically experimental
+correctness verification and by no means exhaustive -- this is true for both
+sequential and concurrent programs. Nevertheless, it is a good starting point in
+practice. Especially parallel algorithms can, as a first step, be tested on a
+single thread to assure conceptual correctness.
+
+Due to the already pointed out non-determinism of thread interleavings -- caused
+either by true hardware parallelism or by the intransparent heuristics of a
+thread scheduler -- testing of truly parallel algorithms is practically
+impossible. Errors might seem to occur randomly, or so spuriously that they are
+not found during testing \cite{Goetz2006Java}. To increase the chance to hit
+erroneous execution paths, tests can of course be repeated automatically with a
+huge variety of input data. Still, this is not exhaustive. Thread scheduling is
+non-deterministic, but not entirely random. Executing a concurrent program
+multiple times does not guarantee to execute different thread
+interleavings. Therefore, more elaborate methods are required, in order to
+verify the correctness of parallel programs.
+
+For development purposes, I implemented an experimental black-box testing suite,
+which asserts a single post-condition for the parallel algorithms. Recall from
+section~\ref{sec:morphology-area-opening} that $\gamma^a_{\lambda}$ denotes area
+opening and $f$ a projection from a subset of $\mathbb{R}^2$ into
+$\mathbb{R}^*$. Let, moreover, $\rho^a_{\lambda}$ denote any parallel variant of
+area opening. We assert that:
+
+\begin{equation}
+  \label{eq:correctness-experimental-post}
+  \gamma^a_{\lambda}(f) = \rho^a_{\lambda}(f)
+\end{equation}
+
+Again, due to the non-determinism of thread scheduling, this assertion might
+only fail occasionally for incorrect programs.
+
+\section{Java Pathfinder}
+\label{sec:correctness-jpf}
+
+Java Pathfinder (JPF) is an explicit state enumerator and model checker
+\cite{Visser2003Model}. JPF has been used to verify concurrent real-life
+\emph{NASA} programs and has discovered serious bugs \cite{Visser2004Test}. The
+model checker uses search heuristics to execute all relevant states of a
+program. It reports erroneous operations, such as accessing fields on
+\inlinecode{null} objects or division by zero. Additionally, programs can be
+annotated with pre- and post-conditions, as well as class invariants, to model
+more complex correctness properties.
+
+JPF can be seen as a drop-in JVM replacement and has been especially designed to
+uncover concurrency related bugs \cite{Visser2003Model}. Any Java program can be
+run directly in JPF, with the exception of programs that use native code. JPF
+aware programs (those that are annotated with properties) benefit most from
+model checking and, theoretically, no code-changes are required when moving the
+model checked target code to a production system running a typical JVM.
+
+\subsection{Symbolic Execution}
+\label{sec:correctness-jpf-symbolic}
+
+Symbolic execution is a method of model checking that computes values of
+variables, in order to execute each path of the program once
+\cite{Khurshid2003Generalized}. Thereby, it is not necessary to execute the
+system under test (SUT) with many different input variables to trigger each path
+once, possibly re-taking already executed and checked program paths. Symbolic
+variables are assigned as needed, to trigger all possible program paths. This is
+trivial for data types like Boolean, as there are only two possible values to
+assign. In the case of numeric data types, JPF uses linear programming solvers
+to compute appropriate values, depending on the program's control flow.
+
+The state space of the area opening algorithm is dependent on the image
+structure. If we focus on the possible number of orderings of the pixels of an
+image containing $n$ pixels, times the valid range of values for $\lambda \in
+[0, n]$, the input space becomes $O(nn!)$. Symbolic execution can effectively
+reduce the checking time, by triggering the execution of each combination of
+\inlinecode{union} and \inlinecode{uniteNeighbors} once instead of using real
+pixel values
+
+\subsection{Current State of Implementation}
+\label{sec:correctness-jpf-impl}
+
+JPF, in its most recent version (\emph{jpf-core}, commit 1155:1f82eee5f139),
+provides automatic state exploration and performs the most basic correctness
+checks. Further modules allow to annotate Java code with pre- and
+post-conditions and class invariants (\emph{jpf-aprop}, commit 64:0f5c04466e1c)
+and model checking with symbolic values (\emph{jpf-symbc}, commit
+583:b1bdfb401e9f)\footnote{All JPF modules have been checked out on the
+  27.04.2014.}.
+
+Annotations are limited to accessing class fields and method
+parameters. Functions cannot be called from within annotations, since functions
+might have side effects. JPF has no notion of \emph{pure} functions. (There is a
+\inlinecode{@SandBox} annotation, but it has no effect in this regard.) In order
+to model check parallel area opening, we require access to a number of auxiliary
+functions, to find the root of a connected component, to get a pixel's
+gray-value and so on (see
+section~\ref{sec:correctness-area-opening-properties}). One method to implement
+more complex properties through a \inlinecode{Property} interface is to use the
+\inlinecode{satisfies} directive. The JPF implementation to check properties in
+this way seems to be buggy. Another major bug in the JPF implementation is an
+error, that occurs when using the Java \inlinecode{Logger} class. This makes it
+currently impossible to verify any STM variants of the algorithms using
+\emph{multiverse}. Even though fixing bugs in JPF is out of scope of this
+project and the verification of STM algorithms is therefore identified as future
+work, I performed some minor changes, in order to correct JPF's error reporting.
+
+JPF has a vast number of configurable options. There is an active community
+around JPF and it is subject to active research \cite{Visser2003Model,
+  Khurshid2003Generalized, Visser2004Test}. The configuration process is very
+trial-and-error driven. JPF is by no means a light-weight tool for ``drive-by''
+software verification.
+
+\section{Verifying Area Opening}
+\label{sec:correctness-area-opening}
+
+\subsection{Correctness Properties}
+\label{sec:correctness-area-opening-properties}
+
+In order to verify that all algorithms behave the same, it is necessary to
+define correctness properties, which are universal to the family of union-find
+based area opening algorithms. The following properties are universal and all
+algorithms presented in chapter~\ref{chpt:area-opening} must respect these. We
+need to verify that (1) the pixels are filtered in the correct order and (2)
+that the connected components of two pixels are always united with respect to
+the correct conditions.
+
+Because we do not want to alter the program state when executing assertions, we
+need to introduce a pure version of \inlinecode{find} that does not perform path
+compression. The pure implementation of \inlinecode{find} is recursive and does
+not have any side-effects:
+
+\lstinputlisting[style=inline, linerange={findRec0-findRec1}]{../parallel-morphology/verify/dk/itu/parallel/morphology/verify/unionfind/UnionFindVerifyHarness.java}
+
+All invocations of \inlinecode{find} in the remainder of this chapter refer to
+the pure, recursive implementation.
+
+\subsubsection{Area Opening}
+\label{sec:correctness-area-opening-properties-ao}
+
+As already mentioned in chapter~\ref{chpt:area-opening}, in order to guarantee
+implicit scanning of the regional maxima, the algorithms need to filter the
+pixels in \emph{decreasing gray-scale order} \cite{Meijster2002Comparison}. This
+is an operational correctness property. In the sequential algorithm, this can be
+ensured by simply sorting pixels by gray-scale value and then iterating the
+pixel array from bright to dark pixels.
+
+Obviously, this is harder to achieve in parallel programs, since we need to
+ensure that all threads synchronize on the decrease of the current gray-level
+value. Otherwise, it might occasionally occur that one thread proceeds to scan a
+pixel of lower gray-value and unites it with a connected component, that thereby
+reaches a size of $\lambda$, whereas the component should have instead been
+united with a different pixel of higher gray-level first and thereby would
+already have reached $\lambda$. This pattern can occur, because of
+non-deterministic delays of threads between retrieving a pixel and calling
+\inlinecode{uniteNeighbors} on it and results in wrongly grown regions.
+
+In order to assure that pixels are scanned in correct order across independent
+threads, we can formulate a simple invariant for \inlinecode{uniteNeighbors}:
+its collected input over program execution must be a function of time $t$ to
+gray-value, $g: \mathbb{R}^* \rightarrow \mathbb{R}^*$, which is
+\emph{monotonically decreasing}, so that $g(t) \leq g(t - 1)$.
+
+To use another, more imperative model, let $Q$ be the set of all already
+filtered pixels and $P$ of the pixels yet to process. Initially, $Q = \emptyset$
+and $P = I$, where $I$ is the set of all pixels in the image. Let moreover $f: I
+\rightarrow \mathbb{R}^*$ denote the gray-value of a pixels (recall this
+definition from chapter~\ref{sec:morphology-area-opening}). After each
+invocation of \inlinecode{uniteNeighbors}, $Q \leftarrow Q \cup \{c\}$ and $P
+\leftarrow P \setminus \{c\}$ are assigned atomically:
+
+\begin{equation}
+  \label{eq:correctness-area-opening-properties-ao-inv}
+  J: \forall q \in Q, \forall p \in P, f(q) \geq f(p)
+\end{equation}
+
+For an actual implementation of this check, it is more convenient to only
+maintain a pointer to the last encountered gray-level, $\theta$, and assign
+$\theta \leftarrow f(c)$ after each invocation of
+\inlinecode{uniteNeighbors}. The invariant in
+equation~\ref{eq:correctness-area-opening-properties-ao-inv}, as well as the
+property of monotonic decrease, are Markov chains: the state is only dependent
+on the last encountered pixel, as it is the \emph{infimum} of all pixels in $Q$
+w.r.t gray-level. Therefore, referencing $\theta$ in the invariant is
+sufficient:
+
+\begin{eqnarray}
+  \label{eq:correctness-area-opening-properties-ao-inv2}
+  J': & \theta \geq f(c) \\
+   & \{J'\} ~ \inlinecode{uniteNeighbors(c, lambda)} ~\{J'\}
+\end{eqnarray}
+
+\subsubsection{Asymmetric Union-Find}
+\label{sec:correctness-area-opening-properties-uf}
+
+Until now, we have not seen any special properties of the asymmetric area
+opening union-find algorithm. Instead, we will use the sequential algorithm and
+the fact that already united components may not be separated again in order to
+deduce pre- and according post-conditions for \inlinecode{union}.
+
+The rules for uniting two connected components are simple and can directly be
+inferred from the code (see again
+figure~\ref{fig:morphology-algorithm-union}). We encounter essentially three
+cases: (1) the pixels \inlinecode{n} and \inlinecode{c} are already in the same
+set, (2) \inlinecode{find(n)} and \inlinecode{find(c)} are of the same
+gray-level, or the size of the connected component of \inlinecode{n} is less
+than $\lambda$, or (3) \inlinecode{find(n)} and \inlinecode{find(c)} are of
+different gray-level and the size of the connected component of \inlinecode{n}
+exceeds $\lambda$.
+
+For each case, consistency is mandatory. The post-conditions of
+\inlinecode{union} are dependent on the initial state. In the first case, we must assure that both pixels remain
+in the same set after calling \inlinecode{union} on them:
+
+\begin{eqnarray}
+  P_1: & \inlinecode{find(n)} = \inlinecode{find(c)} \\
+  Q_1: & \inlinecode{find(n)} = \inlinecode{find(c)} \\
+  & \{P_1\} ~ \inlinecode{union(n, c)} ~ \{Q_1\}
+  \label{eq:correctness-area-opening-properties-uf-1}
+\end{eqnarray}
+
+In the case that both pixels fulfill the requirements for uniting them, we need
+to make sure that no other thread tampered with the connected components of
+\inlinecode{n} and \inlinecode{c} in an inconsistent way. We can do this, by
+verifying that the sum of the sizes of both components is the same, before and
+after executing \inlinecode{union}. Of course, the roots of both pixels are
+required to be the same after uniting them. Let \inlinecode{old} denote the
+old-operator, i.e. return the state of a variable before it was modified. Let
+now furthermore, $C_x \subseteq I$ denote the set of pixels in the current
+connected component of a pixel $x \in I$. This results in the following
+post-condition:
+
+\begin{eqnarray}
+  P_2: & \neg P_1 \wedge ( f(\inlinecode{find(n)}) = f(\inlinecode{find(c)}) ~ \vee ~ |C_n| < \lambda) \\
+  Q_2: & \inlinecode{find(n)} = \inlinecode{find(c)} \wedge |C_n| = \inlinecode{old}(|C_n|) + \inlinecode{old}(|C_c|) \\
+  & \{P_2\} ~ \inlinecode{union(n, c)} ~ \{Q_2\}
+  \label{eq:correctness-area-opening-properties-uf-2}
+\end{eqnarray}
+
+The third case is the direct consequence of $P_2$ not being fulfilled. The
+pixels have not been united beforehand, they are not at level and $C_n$ exceeds
+$\lambda$. Therefore, $C_c$ must be deactivated and the connected components of
+both pixels must remain disjoint.
+
+\begin{eqnarray}
+  P_3: & \neg P_1 \wedge \neg P_2 \\
+  Q_3: & \inlinecode{find(n)} \neq \inlinecode{find(c)} \wedge |C_c| \geq \lambda \\
+  & \{P_3\} ~ \inlinecode{union(n, c)} ~ \{Q_3\}
+  \label{eq:correctness-area-opening-properties-uf-3}
+\end{eqnarray}
+
+Finally, the following defines the complete correctness property for asymmetric
+\inlinecode{union}:
+
+\begin{eqnarray}
+  \label{eq:correctness-area-opening-properties-uf}
+  P: & P_1 \vee P_2 \vee P_3 \\
+  Q: & Q_1 \vee Q_2 \vee Q_3 \\
+  & \{P\} ~ \inlinecode{union(n, c)} ~ \{Q\}
+\end{eqnarray}
+
+\subsection{Verification}
+\label{sec:correctness-area-opening-verification}
+
+Using JPF to verify a complex algorithm, such as parallel union-find based area
+opening, poses a number of obstacles, as already outlined in
+section~\ref{sec:correctness-jpf-impl}. Because of the bugs in and limitations
+of the JPF implementation, the pre- and post-conditions defined in
+section~\ref{sec:correctness-area-opening-properties} can not be expressed as
+JPF annotations. As a work-around, I implemented sub-classes of the algorithms
+under test that call the methods of their super classes and internally and
+atomically perform Java assertions before and after. JPF can be configured to
+handle failed assertions as property violations. In order not to modify the
+state of the program during observation (for example, calling \inlinecode{find}
+during checking correctness properties can compress the path of a disjoint tree,
+see the beginning of section~\ref{sec:correctness-area-opening-properties}), I
+use pure auxiliary implementations of methods that perform
+optimization. Additionally, I prune the state space explored, using the
+\inlinecode{Verify} API \cite{Visser2003Model}. This API can also be used to
+force JPF to execute a sequence of commands atomically -- thread scheduling is
+simply disabled in the JVM when JPF executes atomic sequences.
+
+Even though the model checking is performed using symbolic execution, the memory
+consumption and the time required for model checking \emph{all} possible program
+states is enormous. This means that, in order to achieve some usable results,
+the time used for model checking must be limited.
+
+\begin{table}
+  \centering
+  \makebox[\textwidth][c]{
+    \begin{tabular}{ll}
+      \hline
+      \hline
+      \textbf{Algorithm} & \textbf{Acronym} \\
+      \hline
+      Shared sorting (bucket sort) & \emph{block-bucket} \\
+      Shared sorting (counting sort) & \emph{block-counting} \\
+      \hline
+      Sort-free pixel queues (\citet{Michael1996Simple} queue) & \emph{pixel-queues-msq} \\
+      Sort-free pixel queues (bounded array queue) & \emph{pixel-queues-array} \\
+      Sort-free sub-image filtering & \emph{split} \\
+      \hline
+      Non-parallel line queues (\citet{Michael1996Simple} queue) & \emph{line-queues-msq} \\
+      Non-parallel line queues (bounded array queue) & \emph{line-queues-array} \\
+      Non-parallel counting sort sub-image filtering & \emph{split-counting} \\
+      \hline
+      Simplified, sequential algorithm by \citet{Meijster2002Comparison} & \emph{sequential} \\
+      Sequential algorithm with bogus \inlinecode{union} & \emph{bogus-union} \\
+      Sequential algorithm with bogus main loop & \emph{bogus-loop} \\
+      \hline
+      \hline
+    \end{tabular}
+  } %makebox
+  \caption{Algorithms and their corresponding acronyms.}
+  \label{tab:algorithms-acronyms}
+\end{table}
+
+This is reasonable, because of an interesting observation. In order to assure
+that JPF correctly finds bugs in the algorithms, I implemented a bogus
+\inlinecode{union} algorithm that always and unconditionally unites pixels if
+they are not already in the same set. Additionally, I added a bogus (linear)
+main-loop that provides the input for \inlinecode{uniteNeighbors}. It simply
+reverses the order of the sorted pixels and starts at the lowest gray-level. JPF
+always quickly finds the violation of the correctness properties after about two
+minutes (see
+table~\ref{tab:correctness-area-opening-verification-results}). This suggests
+that errors are found quickly, but that exploring the entire state space of a
+correct program is very time consuming.
+
+\begin{table}[h]
+  \centering
+  \makebox[\textwidth][c]{
+    \begin{tabular}{llrrl}
+      \hline
+      \hline
+      \textbf{Algorithm} & \textbf{Time} & \textbf{Depth} & \textbf{States} & \textbf{Result} \\
+      \hline
+      \emph{block-bucket} & 01:00:00 & 1079 & 23245 & No errors detected \\
+      \emph{block-counting} & 01:00:00 & 1091 & 20426 & No errors detected \\
+      \emph{pixel-queues-msq} & 01:00:00 & 3878 & 17847 & No errors detected \\
+      \emph{pixel-queues-array} & 00:03:32 & 4146 & 8101 & Out of memory \\
+      \emph{split} & 01:00:01 & 1113 & 3285 & No errors detected \\
+      \emph{line-queues-msq} & 01:00:03 & 3423 & 9577 & No errors detected \\
+      \emph{line-queues-array} & 01:00:03 & 3937 & 10665 & No errors detected \\
+      \emph{split-counting} & 01:00:03 & 1070 & 3628 & No errors detected \\
+      \emph{sequential} & 01:00:05 & 15 & 101 & No errors detected \\
+      \emph{bogus-union} & 00:02:18 & 14 & 99 & \inlinecode{union} violates post-condition. \\
+      \emph{bogus-loop} & 00:02:16 & 14 & 98 & Not monotonically decreasing. \\
+      \hline
+      \hline
+    \end{tabular}
+  } % makebox
+  \caption[Verification results for the various area opening algorithms.]{Verification results for the various area opening algorithms. Time is formatted in \emph{hours:minutes:seconds}. The algorithms are denoted after table~\ref{tab:algorithms-acronyms}.}
+  \label{tab:correctness-area-opening-verification-results}
+\end{table}
+
+All algorithms were model checked, providing the JVM with 4 gigabyte of memory
+(except for \emph{bogus-union} and \emph{bogus-loop}, which were checked on a
+different machine with only 2 gigabyte). The algorithms use the optimistic
+fine-grained locking union-find variant, except for the bogus and the linear
+implementation, which use the original algorithm. The parallel algorithms
+utilize only two independent threads to reduce the number of possible
+interleavings. Otherwise, the check would suffer from an immense state space
+explosion. The time limit is set to one hour. If JPF has model-checked an
+algorithm for an hour without any result, it terminates with the message ``No
+errors detected''.
+
+The collected results of the model-checking are shown in
+table~\ref{tab:correctness-area-opening-verification-results}. The algorithms
+are denoted with acronyms after table~\ref{tab:algorithms-acronyms}. All
+parallel algorithms pass the model check for the correctness properties, as
+presented in section~\ref{sec:correctness-area-opening-properties}, except for
+the obviously wrong implementations. We can see that only a few states are
+required to recognize a violation of the correctness properties.
+
+Another important result is that JPF runs out of memory in case of
+\emph{pixel-queues-array}. Still, JPF explores more states than for the
+\citet{Michael1996Simple} queue variant, even though it proceeds not as deep
+into the state space. It is not able to find any property violation.
+
+Based on these results we can conclude that model checking is not necessarily
+the best method to verify complex parallel algorithms. JPF has mostly been used
+for concurrent applications, that have a somewhat simpler control flow and a
+much smaller input space \cite{Visser2003Model, Khurshid2003Generalized}. Other
+formal methods, for example the application of CSP implementations
+\cite{Hoare1978Communicating, Roscoe1997Theory}, could provide a true proof of
+correctness. These would, of course, require much more manual work. From this
+point of view, model checking is the right choice, since it can be executed
+automatically, because the correctness properties for union-find based area
+opening are universal to this algorithm family. The results underline that it is
+unfeasible to model check the algorithms without a time limit. Given the state
+space of $O(nn!)$ and the fact that JPF can, according to the results, maximally
+check roughly 25000 states per hour, depending on the algorithm, it would take
+more than just days to verify the correctness of all programs: already for an
+image of $3 \times 3$ pixels, we can expect an accumulated checking time of
+about 43 days. While it would, in principle, still be possible to do this, it
+is, due to a limit of resources accessible during this thesis, not possible to
+model check the algorithms for several weeks.
+
+%%% Local Variables:
+%%% mode: latex
+%%% TeX-master: "main"
+%%% End:

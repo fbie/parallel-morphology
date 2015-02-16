@@ -1,0 +1,16 @@
+# Typical stuff
+*~
+*.class
+*.o
+*.so
+auto
+build
+bin
+.metadata
+*.docx
+.DS_Store
+
+# Some distinct folders
+lib
+jpf-*
+text/plots

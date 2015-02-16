@@ -1,0 +1,83 @@
+@using=jpf-symbc
+@using=jpf-aprop
+
+# Taken directly from jpf-aprop examples
+listener.autoload=\
+  javax.annotation.Nonnull,\
+  javax.annotation.concurrent.GuardedBy,\
+  gov.nasa.jpf.annotation.Const,\
+  gov.nasa.jpf.annotation.NonShared,\
+  gov.nasa.jpf.annotation.Invariant,\
+  gov.nasa.jpf.annotation.Ensures,\
+  gov.nasa.jpf.annotation.Requires
+
+listener.javax.annotation.Nonnull=gov.nasa.jpf.aprop.listener.NonnullChecker
+listener.javax.annotation.concurrent.GuardedBy=gov.nasa.jpf.aprop.listener.LockChecker
+listener.gov.nasa.jpf.annotation.Const=gov.nasa.jpf.aprop.listener.ConstChecker
+listener.gov.nasa.jpf.annotation.NonShared=gov.nasa.jpf.aprop.listener.NonSharedChecker
+listener.gov.nasa.jpf.annotation.Invariant=gov.nasa.jpf.aprop.listener.ContractVerifier@pbc
+listener.gov.nasa.jpf.annotation.Ensures=gov.nasa.jpf.aprop.listener.ContractVerifier@pbc
+listener.gov.nasa.jpf.annotation.Requires=gov.nasa.jpf.aprop.listener.ContractVerifier@pbc
+
+# Link to binaries and libraries
+classpath = ${config_path}/../bin:${config_path}/../lib/multiverse-core-0.7.0.jar
+sourcepath = ${config_path}/src:${config_path}/verify
+native_classpath = ${config_path}/../bin:${config_path}/verify
+type_classpath = ${config_path}/../bin:${config_path}/verify
+
+# Specify driver
+target = dk.itu.parallel.morphology.verify.FilterDriver
+
+vm.por = true
+#vm.class = gov.nasa.jpf.vm.SingleProcessVM
+vm.insn_factory.class = gov.nasa.jpf.symbc.SymbolicInstructionFactory
+vm.tree_output = false 
+vm.path_output = true
+
+# Configure symbolic execution
+symbolic.min_int = 0
+symbolic.max_int = 3
+symbolic.undefined = 0
+
+#symbolic.debug = true
+
+# Coral is the only solver that can handle more complex conditions (division)
+symbolic.dp = coral
+
+#symbolic.lazy = true
+symbolic.concolic = true
+
+# Filter methods
+symbolic.method = dk.itu.parallel.morphology.filter.base.Filter.areaOpen(sym#sym)
+
+# Is this necessary for parallel verification?
+#symbolic.method+=,dk.itu.parallel.morphology.filter.base.FilterThread.filter()
+
+#search.class = gov.nasa.jpf.search.heuristic.Interleaving
+search.class = gov.nasa.jpf.search.heuristic.DFSHeuristic
+
+# Interesting and helpful listeners
+listener = gov.nasa.jpf.listener.PreciseRaceDetector
+listener+=,gov.nasa.jpf.listener.AssertionProperty
+listener+=,gov.nasa.jpf.listener.BudgetChecker
+
+# Only run maximally for an hour
+budget.max_time = 3600000
+
+# Symbolic listeners
+listener+=,gov.nasa.jpf.symbc.SymbolicListener
+
+# Optimizing
+listener+=,gov.nasa.jpf.listener.CGRemover
+
+# Terminate at the first error encountered
+search.multiple_errors = false
+log.level = severe
+log.output = err
+log.handler.class = gov.nasa.jpf.util.LogHandler
+log.info = gov.nasa.jpf.vm.ClassInfo
+
+report.console.file = jpf_output.log
+
+cg.max_processors = 3
+cg.enable_atomic = true

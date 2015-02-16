@@ -1,0 +1,230 @@
+\chapter{Introduction}
+\label{chpt:introduction}
+
+Over recent years, the quality and average size of digital images has increased
+tremendously. Additionally, the mere count of digital images produced every day
+is increasing, too. There are various reasons to analyze digital images
+automatically, for example in the medical domain. Here, modern clinical scans,
+such as magnetic resonance tomography (MRT) or computing tomography (CT),
+produce huge amounts of data. In order to speed up the analysis of such huge
+images, there has always been a trend to parallelize image analysis algorithms,
+as some of the problems on images are embarrassingly parallel. Nevertheless,
+there are also operations on images that are hard to parallelize, because the
+possibilities for parallelism are not obvious. One of these operations is
+morphological filtering.
+
+Morphological filters are operators on two or three dimensional
+images that filter connected components from the input image. They are defined
+in terms of openings and closings, where an opening removes bright regions from
+an image while a closing removes dark regions \cite{Serra1992Overview}.
+
+More complex, shape preserving morphological filters are \emph{area opening and
+  closing} (I will refer to these filters as \emph{area opening} through the
+rest of this thesis). Given a minimum area parameter $\lambda$, all bright or
+dark elements respectively of size less than $\lambda$ are removed
+\cite{Vincent1994Morphological}. Area opening is useful for image segmentation
+and noise removal. There already exist a number of algorithms to compute area
+opening, differing tremendously in performance \cite{Vincent1994Morphological,
+  Wilkinson2000Fast, Meijster2002Comparison}. These three algorithms are all
+implemented sequentially.
+
+In this thesis, I report on the development of a family of parallel algorithms
+for area opening for the sake of increased performance on large
+images. \citet{Wilkinson2008Concurrent} developed a parallel algorithm to
+compute morphological attribute filters, a generalization of morphological area
+filtering, using Max-Trees. However, it consists of a major sequential part
+\cite{Wilkinson2008Concurrent}. The novelty in this thesis is that the
+algorithms presented here are based on the union-find area opening algorithm by
+\citet{Meijster2002Comparison} and use variants of a shared union-find data
+structure \cite{Tarjan1983Data} in order to reduce the amount of sequential work
+substantially. I will show that some of the new parallel algorithms can
+outperform the original, sequential algorithm and also that the new parallel
+algorithms are formally correct.
+
+Throughout this thesis, I use valid Java code to describe algorithms, except
+where stated otherwise. For brevity, some less important implementation details
+may be omitted. These are replaced by descriptive comments.
+
+\section{Contributions}
+\label{sec:introduction-contributions}
+
+The parallel algorithms, that I developed in this thesis, are based on the
+union-find based area opening algorithm by \citet{Meijster2002Comparison}. To
+fully exploit parallelism, it is therefore important to address shared
+union-find data structures. Concurrent union-find data structures have already
+been subject of research \cite{Berman2010Multicore, Anderson1994Waitfree}.
+
+The contributions of this thesis are the following:
+
+\begin{itemize}
+\item Reviewing concurrent union-find data structures, their performance and how
+  they can be applied to our problem. Not all union-find algorithms directly map
+  to area opening. Dedicated performance experiments provide us with insights
+  into which algorithm best fits our needs.
+
+\item Developing and evaluating a number of parallel algorithms for
+  morphological area opening. I will evaluate algorithms in terms of performance
+  and provide a set of repeatable experiments that show how the algorithms
+  behave, given certain input over a range of processors to run on.
+
+\item Verifying the correctness of the improved algorithm using Java Pathfinder
+  \cite{Visser2003Model}. Even though experimental testing can increase
+  confidence, the inherent non-determinism of thread scheduling and delays in
+  parallel programs makes it strictly speaking impossible to test all possible
+  execution branches. Therefore, I show the correctness of the parallel area
+  opening algorithms by more formal methods.
+\end{itemize}
+
+\section{Programming Shared Memory Multiprocessors}
+\label{sec:introduction-concurrency}
+
+Software for shared memory multiprocessors has been subject of research for a
+long time already \cite{Herlihy2008Art}. Yet, programming concurrent and
+parallel applications, especially with low-level synchronization primitives, has
+not hit the main stream entirely yet \cite{Herlihy2008Art}. In this section, I
+will give a brief overview over the basics of programming for shared memory
+multiprocessors.
+
+\subsection{Blocking Programs}
+\label{sec:introduction-blocking}
+
+Blocking parallelism describes programs where independent processes, or threads,
+wait for each other in order to make progress \cite{Herlihy2008Art}. This
+waiting is achieved by the use of locks, which protect resources from concurrent
+access.
+
+In such a program, a thread $A$ has to wait, while thread $B$ holds the lock to a
+resource $R$. As soon as $B$ releases the lock, $A$ can attempt to acquire the
+lock for $R$, blocking $B$ from accessing $R$ \cite{Herlihy2008Art}. This scheme
+can result in deadlocks ($A$ waiting indefinitely for $B$ to release the lock or
+vice versa), if access to the shared resource via locking is not implemented
+consistently or, if a thread terminates unexpectedly while holding the lock, thus
+never being able to release it again. Also, waiting threads cannot make any
+progress while the resource is locked, such that precious computing time goes
+wasted \cite{Herlihy2008Art}.
+
+One can not only block resource access, but also principal progress, using
+barriers. Barriers typically block the progress of each thread, that reached the
+barrier, until all other threads also arrived at this point in the code. Only
+then all threads are allowed to continue together \cite{Herlihy2008Art}.
+
+\subsection{Lock-Free and Wait-Free Programs}
+\label{sec:introduction-wf-primitives}
+
+Lock-free and wait-free programs are closely related. The wait-free property is
+stronger than the lock-free property: lock-free algorithms are defined by the
+absence of locks, while wait-free algorithms are guaranteed to terminate in a
+bounded number of steps \cite{Alistarh2013Are} with all threads \emph{always}
+making progress.
+
+Theoretically, wait-free algorithms outperform lock-free algorithms, but recent
+research by \citet{Alistarh2013Are} suggests that lock-free programs in practice
+actually exhibit wait-free performance. Their results suggest, that constructing
+extremely complex, wait-free algorithms might be unnecessary
+\cite{Alistarh2013Are}.
+
+Lock- and wait-free algorithms perform in general much better in comparison to
+lock-based algorithms. To be able to update values and references consistently,
+there exist synchronization primitives as CPU instructions, which, in Java, are
+exposed to the programmer as function calls on container types.
+
+\subsubsection{Compare and Swap}
+\label{sec:introduction-cas}
+
+The compare-and-swap (\emph{CAS}) primitive atomically, i.e. as a single
+instruction on the CPU, performs the equivalent to the following code (here
+denoted in C{}\verb!++!) \cite{Goetz2006Java, Herlihy2008Art}:
+
+\begin{lstlisting}[frame=L, language=C++]
+  template <typename T>
+  bool CAS(T* r, const T& e, const T& n)
+  {
+    if (*r == e) {
+      *r = n;
+      return true;
+    }
+    return false;
+  }
+\end{lstlisting}
+
+Given a pointer to some variable \inlinecode{r}, a reference to an expected
+value of the same type \inlinecode{e}, and a replacement value \inlinecode{n},
+the primitive replaces the value, which \inlinecode{r} points to, only, if
+\inlinecode{r} points to \inlinecode{e} at the time of the call. \emph{CAS}
+returns a boolean to the caller, indicating, whether the update was
+successful. The caller can then react to the failure, for example by simply
+updating its local copy of the value and re-trying the operation until it
+succeeds.
+
+Essentially, the caller only can update a variable if he is up-to-date with its
+latest value \cite{Goetz2006Java}. This control structure can be used to build
+entire data structures, as we will see next. A major issue is the lack of
+composition, meaning that it is impossible to update two or more independent
+variables atomically \cite{Herlihy2008Art}.
+
+Java does not pass values by pointer, so the value of a function parameter
+cannot be changed globally by a function. Therefore, Java implements \emph{CAS}
+through the \inlinecode{AtomicReference} class, which references some object
+internally. Its public member function \inlinecode{compareAndSet} corresponds to
+\emph{CAS} \cite{Goetz2006Java}. Java also provides multiple specialized atomic
+data types, like for instance \inlinecode{AtomicInteger} or
+\inlinecode{AtomicLong}, as well as array variants of those types
+\cite{Goetz2006Java}.
+
+\subsubsection{Michael-Scott Queue}
+\label{sec:introduction-msq}
+
+A well known wait-free data structure is the \citet{Michael1996Simple} queue
+(\emph{MSQ}). The \emph{MSQ} is a first-in-first-out queue, using only the
+compare-and-swap primitive to synchronize between threads that concurrently
+access it.
+
+Internally, the \emph{MSQ} maintains two pointers to the \inlinecode{head} and
+the \inlinecode{tail} of a linked list, where the \inlinecode{head} always is a
+dummy node. By checking the state of the next pointer of the \inlinecode{tail}
+and the \inlinecode{head} node, the algorithm can figure out, whether some
+thread currently is executing an update on the queue. If that is the case, all
+threads work towards maintaining consistency on the queue. If not, a new update
+can be initiated. This pattern makes the \emph{MSQ} wait-free and prone to
+unexpected thread termination \cite{Michael1996Simple, Goetz2006Java}. The
+\inlinecode{ConcurrentLinkedQueue} class provides an \emph{MSQ} based
+implementation in the JVM.
+
+\subsection{Transactional Memory}
+\label{sec:introduction-transm}
+
+Transactional memory is a concept borrowed from relational data bases, where
+consistency is the most important property. In data base systems, a transaction
+is a concatenation of modifications that only commit (i.e. become permanent), if
+no other changes have been made to the data touched by this transaction, since
+it began \cite{Herlihy2008Art}.
+
+When applied to shared memory multiprocessors, concurrent threads issue a
+transaction for any number of memory modifications they want to perform
+atomically. Equally, these transactions only commit, if there are no conflicts
+due to other threads writing to the same memory locations. Otherwise, the
+changes get rolled back and the transaction, depending on the re-try policy of
+the system, can be re-tried or simply aborted \cite{Herlihy2008Art}.
+
+From the outside, a transaction is seen as a single atomic update of multiple
+variables. This is a huge advantage compared to \emph{CAS}. Also, it reduces
+complexity, since the synchronization is entirely transparent to the programmer
+\cite{Herlihy2008Art}. Today's main-stream hardware does not support
+transactional memory. Instead, software transactional memory (\emph{STM}) has
+been subject to research, originally proposed by Shavit et
+al. \cite{Shavit1997Software, Herlihy2008Art}.
+
+Neither OpenJDK nor the Oracle JVM implement transactional memory. Instead,
+there exist a number of \emph{STM} libraries for Java. The code for this thesis
+uses the \emph{multiverse} library, which is open source and freely available
+\cite{MultiverseWebsite}. The algorithms presented in this thesis use
+\emph{multiverse} as a black-box to gain access to transactional memory
+capabilities. Therefore, I will not provide a detailed description of \emph{STM}
+algorithms. Further information on the implementation details of
+\emph{multiverse} can be found on the library's website
+\cite{MultiverseWebsite}.
+
+%%% Local Variables:
+%%% mode: latex
+%%% TeX-master: "main"
+%%% End:

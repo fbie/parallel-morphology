@@ -1,0 +1,33 @@
+\begin{abstract}
+  This thesis reports on the development of a family of parallel algorithms for
+  computing area openings and closings on gray-scale images, in order to
+  increase performance on large images. Previous parallel and sequential
+  algorithms did not fully exploit the parallel nature of contemporary
+  computers. The novelty in this thesis is that the developed algorithms use
+  variants of a shared union-find data structure. This shared union-find
+  approach reduces the amount of sequential work substantially.
+
+  By conducting structured performance experiments, I show that, in particular,
+  a certain type of the new, parallel algorithms outperforms the original,
+  sequential algorithm by far on large images. Moreover, by identifying formal
+  correctness properties and by using Java Pathfinder to model check the
+  respective implementations, I show that the new parallel algorithms are
+  formally correct. Additionally, I discuss the feasibility of model checking
+  complex image filtering algorithms.
+
+  Throughout the thesis, I review different variants of concurrent union-find
+  and asses their performance on random graphs, as well as their adaption to
+  parallel area opening. The presented results show that the structure of random
+  input graphs has a greater influence on performance than their mere
+  size. Furthermore, I discuss input image structure in relation to the
+  performance, exhibited by the various parallel area opening
+  algorithms. Performance experiments show that performance limitations on
+  random graphs do not necessarily apply to the performance on images. This
+  thesis opens up for many future research directions on parallel morphological
+  algorithms.
+\end{abstract}
+
+%%% Local Variables:
+%%% mode: latex
+%%% TeX-master: "main"
+%%% End:
